@@ -28,7 +28,7 @@ sel_cats = st.sidebar.multiselect("Attack category", cats, default=cats)
 sel_protos = st.sidebar.multiselect("Protocol", protos, default=protos)
 P = {"cats": sel_cats or cats, "protos": sel_protos or protos}
 
-tab1, tab2, tab3 = st.tabs(["Overview", "OLAP explorer", "Model results"])
+tab1, tab2, tab3, tab4 = st.tabs(["Overview", "OLAP explorer", "Model results", "MITRE ATT&CK"])
 
 with tab1:
     k = q("""SELECT COUNT(*) AS total, SUM(label) AS attacks,
@@ -108,3 +108,30 @@ with tab3:
                     width="stretch")
 
 
+
+
+with tab4:
+    st.subheader("Attack events by ATT&CK tactic")
+    tac = q("""WITH ct AS (
+                   SELECT DISTINCT b.attack_key,
+                          trim(unnest(string_to_array(t.tactic, ','))) AS tactic
+                   FROM bridge_attack_mitre b
+                   JOIN dim_mitre_technique t ON b.technique_key = t.technique_key),
+               ev AS (
+                   SELECT attack_key, COUNT(*) AS events
+                   FROM fact_attack_events GROUP BY attack_key)
+               SELECT ct.tactic, SUM(ev.events) AS events
+               FROM ct JOIN ev ON ev.attack_key = ct.attack_key
+               GROUP BY ct.tactic ORDER BY events DESC""")
+    st.plotly_chart(px.bar(tac, x="tactic", y="events"), width="stretch")
+    st.caption("An attack category can span several tactics, so an event may count "
+               "under more than one bar. The mapping is analyst-defined from the "
+               "UNSW-NB15 category descriptions, not a label from the dataset.")
+    st.subheader("Attack category to ATT&CK technique mapping")
+    mp = q("""SELECT a.attack_cat AS category, t.technique_id, t.technique_name,
+                     t.tactic, b.confidence
+              FROM bridge_attack_mitre b
+              JOIN dim_attack_type a ON a.attack_key = b.attack_key
+              JOIN dim_mitre_technique t ON t.technique_key = b.technique_key
+              ORDER BY a.attack_cat, t.technique_id""")
+    st.dataframe(mp, hide_index=True, width="stretch")
